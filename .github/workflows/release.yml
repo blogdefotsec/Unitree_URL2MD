@@ -1,0 +1,212 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name for the release (e.g. v0.1.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} / ${{ matrix.mode }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        mode: [lite, full]
+        python-version: ['3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install --quiet \
+            requests \
+            beautifulsoup4 \
+            markdownify \
+            pyinstaller
+          if [ "${{ matrix.mode }}" = "full" ]; then
+            pip install --quiet selenium webdriver-manager
+          fi
+
+      - name: Collect PyInstaller args
+        id: args
+        shell: bash
+        run: |
+          PROJECT_DIR="${GITHUB_WORKSPACE}"
+
+          COMMON_ARGS=(
+            --noconfirm
+            --onefile
+            --clean
+            --name url2md
+            --paths "$PROJECT_DIR"
+            --hidden-import html_to_md
+            --hidden-import markdownify
+            --hidden-import bs4
+            --hidden-import soupsieve
+            --hidden-import requests
+            --hidden-import urllib3
+            --hidden-import charset_normalizer
+            --hidden-import certifi
+            --hidden-import idna
+          )
+
+          EXCLUDE_ARGS=()
+          if [ "${{ matrix.mode }}" = "lite" ]; then
+            EXCLUDE_ARGS=(
+              --exclude-module selenium
+              --exclude-module trio
+              --exclude-module wsproto
+              --exclude-module sniffio
+              --exclude-module outcome
+              --exclude-module webdriver_manager
+              --exclude-module sortedcontainers
+              --exclude-module attrs
+              --exclude-module cffi
+              --exclude-module pycparser
+              --exclude-module PySocks
+              --exclude-module websocket_client
+            )
+          fi
+
+          # Join args into a single-line environment-variable-safe string
+          ALL_ARGS=("${COMMON_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$PROJECT_DIR/url2md.py")
+          printf -v joined ' %q' "${ALL_ARGS[@]}"
+          echo "pyinstaller_args=${joined}" >> $GITHUB_OUTPUT
+
+          # Platform suffix for artifact filename
+          case "${{ runner.os }}" in
+            Linux)   PLAT=linux ;;
+            macOS)   PLAT=macos ;;
+            Windows) PLAT=windows ;;
+          esac
+          echo "plat=${PLAT}" >> $GITHUB_OUTPUT
+          echo "bin_dir=dist" >> $GITHUB_OUTPUT
+
+      - name: Clean build artifacts
+        shell: bash
+        run: rm -rf build dist url2md.spec __pycache__
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          # args are already shell-escaped; eval via python avoids quote issues
+          python -c "
+          import sys, subprocess
+          args = r'''${{ steps.args.outputs.pyinstaller_args }}'''.split()
+          # Re-split properly using shlex since %q adds extra quoting
+          import shlex
+          args = shlex.split(r'''${{ steps.args.outputs.pyinstaller_args }}''')
+          cmd = [sys.executable, '-m', 'PyInstaller'] + args
+          print('Running:', ' '.join(cmd))
+          sys.exit(subprocess.call(cmd))
+          "
+
+      - name: Normalize binary paths & package
+        id: package
+        shell: bash
+        run: |
+          PLAT="${{ steps.args.outputs.plat }}"
+          MODE="${{ matrix.mode }}"
+
+          BIN_NAME="url2md"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN_NAME="url2md.exe"
+          fi
+
+          SRC="dist/${BIN_NAME}"
+          if [ ! -f "$SRC" ]; then
+            echo "ERROR: Binary not found at $SRC" >&2
+            ls -la dist/ || true
+            exit 1
+          fi
+
+          ARCHIVE_DIR="url2md-${PLAT}-${MODE}"
+          mkdir -p "${ARCHIVE_DIR}"
+          cp "$SRC" "${ARCHIVE_DIR}/"
+          cp README.md README_CN.md requirements.txt "${ARCHIVE_DIR}/" 2>/dev/null || true
+
+          # Determine archive extension based on platform/mode combo
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ARCHIVE="${ARCHIVE_DIR}.zip"
+            python -c "
+            import zipfile, os
+            root = '${ARCHIVE_DIR}'
+            out  = '${ARCHIVE}'
+            with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for dirpath, _, files in os.walk(root):
+                    for f in files:
+                        p = os.path.join(dirpath, f)
+                        zf.write(p, os.path.relpath(p, root))
+            print('Created:', out)
+            "
+          else
+            ARCHIVE="${ARCHIVE_DIR}.tar.gz"
+            tar -czf "$ARCHIVE" "${ARCHIVE_DIR}"
+          fi
+
+          echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
+          echo "archive_path=${GITHUB_WORKSPACE}/${ARCHIVE}" >> $GITHUB_OUTPUT
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
+          echo "plat=${PLAT}" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: url2md-${{ steps.args.outputs.plat }}-${{ matrix.mode }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Show downloaded files
+        run: ls -la artifacts/
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            artifacts/*
