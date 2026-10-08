@@ -1,0 +1,44 @@
+# ===== PyInstaller 构建产物 =====
+build/
+dist/
+url2md.spec
+
+# ===== 预构建的可执行文件（单文件 ELF） =====
+url2md
+
+# ===== Python 字节码 / 缓存 =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+ENV/
+*.venv/
+
+# ===== Python 打包缓存 =====
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ===== 分发 =====
+*.egg
+*.tar.gz
+*.whl
+
+# ===== 编辑器 / IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 系统垃圾 =====
+.DS_Store
+Thumbs.db
+
+# ===== 日志 =====
+*.log
