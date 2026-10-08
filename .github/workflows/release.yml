@@ -46,11 +46,22 @@ jobs:
             pip install --quiet selenium webdriver-manager
           fi
 
-      - name: Collect PyInstaller args
-        id: args
+      - name: Export platform tag
+        id: info
         shell: bash
         run: |
-          PROJECT_DIR="${GITHUB_WORKSPACE}"
+          case "${{ runner.os }}" in
+            Linux)   PLAT=linux ;;
+            macOS)   PLAT=macos ;;
+            Windows) PLAT=windows ;;
+          esac
+          echo "plat=${PLAT}" >> $GITHUB_OUTPUT
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          # Always use forward slashes — both Git Bash on Windows and PyInstaller accept them
+          PROJECT_DIR="$(pwd | tr '\\' '/')"
 
           COMMON_ARGS=(
             --noconfirm
@@ -87,48 +98,21 @@ jobs:
             )
           fi
 
-          # Join args into a single-line environment-variable-safe string
-          ALL_ARGS=("${COMMON_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$PROJECT_DIR/url2md.py")
-          printf -v joined ' %q' "${ALL_ARGS[@]}"
-          echo "pyinstaller_args=${joined}" >> $GITHUB_OUTPUT
+          rm -rf build dist url2md.spec __pycache__
 
-          # Platform suffix for artifact filename
-          case "${{ runner.os }}" in
-            Linux)   PLAT=linux ;;
-            macOS)   PLAT=macos ;;
-            Windows) PLAT=windows ;;
-          esac
-          echo "plat=${PLAT}" >> $GITHUB_OUTPUT
-          echo "bin_dir=dist" >> $GITHUB_OUTPUT
+          set -x
+          python -m PyInstaller "${COMMON_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$PROJECT_DIR/url2md.py"
 
-      - name: Clean build artifacts
-        shell: bash
-        run: rm -rf build dist url2md.spec __pycache__
-
-      - name: Build with PyInstaller
-        shell: bash
-        run: |
-          # args are already shell-escaped; eval via python avoids quote issues
-          python -c "
-          import sys, subprocess
-          args = r'''${{ steps.args.outputs.pyinstaller_args }}'''.split()
-          # Re-split properly using shlex since %q adds extra quoting
-          import shlex
-          args = shlex.split(r'''${{ steps.args.outputs.pyinstaller_args }}''')
-          cmd = [sys.executable, '-m', 'PyInstaller'] + args
-          print('Running:', ' '.join(cmd))
-          sys.exit(subprocess.call(cmd))
-          "
-
-      - name: Normalize binary paths & package
+      - name: Package artifacts
         id: package
         shell: bash
+        env:
+          PLAT: ${{ steps.info.outputs.plat }}
+          MODE: ${{ matrix.mode }}
+          RUNNER_OS: ${{ runner.os }}
         run: |
-          PLAT="${{ steps.args.outputs.plat }}"
-          MODE="${{ matrix.mode }}"
-
           BIN_NAME="url2md"
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "$RUNNER_OS" = "Windows" ]; then
             BIN_NAME="url2md.exe"
           fi
 
@@ -142,19 +126,20 @@ jobs:
           ARCHIVE_DIR="url2md-${PLAT}-${MODE}"
           mkdir -p "${ARCHIVE_DIR}"
           cp "$SRC" "${ARCHIVE_DIR}/"
-          cp README.md README_CN.md requirements.txt "${ARCHIVE_DIR}/" 2>/dev/null || true
+          for f in README.md README_CN.md requirements.txt; do
+            [ -f "$f" ] && cp "$f" "${ARCHIVE_DIR}/" || true
+          done
 
-          # Determine archive extension based on platform/mode combo
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "$RUNNER_OS" = "Windows" ]; then
             ARCHIVE="${ARCHIVE_DIR}.zip"
-            python -c "
-            import zipfile, os
-            root = '${ARCHIVE_DIR}'
-            out  = '${ARCHIVE}'
+            ARCHIVE_SRC_DIR="$ARCHIVE_DIR" ARCHIVE_OUT="$ARCHIVE" python -c "
+            import os, zipfile
+            root = os.environ['ARCHIVE_SRC_DIR']
+            out  = os.environ['ARCHIVE_OUT']
             with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for dirpath, _, files in os.walk(root):
-                    for f in files:
-                        p = os.path.join(dirpath, f)
+                    for fn in files:
+                        p = os.path.join(dirpath, fn)
                         zf.write(p, os.path.relpath(p, root))
             print('Created:', out)
             "
@@ -164,14 +149,12 @@ jobs:
           fi
 
           echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
-          echo "archive_path=${GITHUB_WORKSPACE}/${ARCHIVE}" >> $GITHUB_OUTPUT
-          echo "mode=${MODE}" >> $GITHUB_OUTPUT
           echo "plat=${PLAT}" >> $GITHUB_OUTPUT
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: url2md-${{ steps.args.outputs.plat }}-${{ matrix.mode }}
+          name: url2md-${{ steps.info.outputs.plat }}-${{ matrix.mode }}
           path: ${{ steps.package.outputs.archive }}
           if-no-files-found: error
 
