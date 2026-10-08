@@ -132,18 +132,7 @@ jobs:
 
           if [ "$RUNNER_OS" = "Windows" ]; then
             ARCHIVE="${ARCHIVE_DIR}.zip"
-            export ARCHIVE_SRC_DIR="$ARCHIVE_DIR" ARCHIVE_OUT="$ARCHIVE"
-            python <<'PY'
-import os, zipfile
-root = os.environ['ARCHIVE_SRC_DIR']
-out  = os.environ['ARCHIVE_OUT']
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zf:
-    for dirpath, _, files in os.walk(root):
-        for fn in files:
-            p = os.path.join(dirpath, fn)
-            zf.write(p, os.path.relpath(p, root))
-print('Created:', out)
-PY
+            python zip_dir.py "$ARCHIVE_DIR" "$ARCHIVE"
           else
             ARCHIVE="${ARCHIVE_DIR}.tar.gz"
             tar -czf "$ARCHIVE" "${ARCHIVE_DIR}"
