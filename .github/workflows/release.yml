@@ -78,6 +78,11 @@ jobs:
             --hidden-import charset_normalizer
             --hidden-import certifi
             --hidden-import idna
+            --hidden-import markdown_it
+            --hidden-import mdurl
+            --hidden-import mdurl._url
+            --collect-submodules markdown_it
+            --collect-submodules soupsieve
           )
 
           EXCLUDE_ARGS=()
@@ -95,6 +100,47 @@ jobs:
               --exclude-module pycparser
               --exclude-module PySocks
               --exclude-module websocket_client
+            )
+          else
+            # full mode: must collect Selenium submodules (they are imported dynamically)
+            COMMON_ARGS+=(
+              --collect-submodules selenium
+              --collect-submodules selenium.webdriver
+              --collect-submodules selenium.webdriver.chrome
+              --collect-submodules selenium.webdriver.common
+              --collect-submodules selenium.webdriver.remote
+              --collect-submodules selenium.webdriver.support
+              --collect-submodules selenium.common
+              --hidden-import selenium.webdriver.chrome.options
+              --hidden-import selenium.webdriver.chrome.service
+              --hidden-import selenium.webdriver.chrome.webdriver
+              --hidden-import selenium.webdriver.common.options
+              --hidden-import selenium.webdriver.common.service
+              --hidden-import selenium.webdriver.common.by
+              --hidden-import selenium.webdriver.common.keys
+              --hidden-import selenium.webdriver.common.desired_capabilities
+              --hidden-import selenium.webdriver.common.timeouts
+              --hidden-import selenium.webdriver.remote.command
+              --hidden-import selenium.webdriver.remote.webdriver
+              --hidden-import selenium.webdriver.remote.webelement
+              --hidden-import selenium.webdriver.remote.remote_connection
+              --hidden-import selenium.webdriver.support.wait
+              --hidden-import selenium.webdriver.support.expected_conditions
+              --collect-submodules webdriver_manager
+              --hidden-import webdriver_manager.chrome
+              --hidden-import webdriver_manager.core.os_manager
+              --hidden-import webdriver_manager.core.logger
+              --hidden-import webdriver_manager.core.download_manager
+              --collect-submodules trio
+              --collect-submodules wsproto
+              --hidden-import sniffio
+              --hidden-import outcome
+              --hidden-import sortedcontainers
+              --hidden-import attrs
+              --hidden-import cffi
+              --hidden-import pycparser
+              --hidden-import websocket_client
+              --hidden-import PySocks
             )
           fi
 

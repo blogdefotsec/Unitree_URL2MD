@@ -40,6 +40,12 @@ COMMON_ARGS=(
     --hidden-import charset_normalizer
     --hidden-import certifi
     --hidden-import idna
+    # markdownify 0.x 依赖
+    --hidden-import markdown_it
+    --hidden-import mdurl
+    --hidden-import mdurl._url
+    --collect-submodules markdown_it
+    --collect-submodules soupsieve
 )
 
 EXCLUDE_ARGS=()
@@ -64,6 +70,48 @@ case "$mode" in
         ;;
     full|complete|with-browser)
         echo "[构建] 完整版模式 —— 含 Selenium (目标机器仍需 Chrome/Chromium 可用)"
+        COMMON_ARGS+=(
+            # Selenium 全量子模块（动态 import 的子模块必须显式收集，否则 PyInstaller 漏打）
+            --collect-submodules selenium
+            --collect-submodules selenium.webdriver
+            --collect-submodules selenium.webdriver.chrome
+            --collect-submodules selenium.webdriver.common
+            --collect-submodules selenium.webdriver.remote
+            --collect-submodules selenium.webdriver.support
+            --collect-submodules selenium.common
+            --hidden-import selenium.webdriver.chrome.options
+            --hidden-import selenium.webdriver.chrome.service
+            --hidden-import selenium.webdriver.chrome.webdriver
+            --hidden-import selenium.webdriver.common.options
+            --hidden-import selenium.webdriver.common.service
+            --hidden-import selenium.webdriver.common.by
+            --hidden-import selenium.webdriver.common.keys
+            --hidden-import selenium.webdriver.common.desired_capabilities
+            --hidden-import selenium.webdriver.common.timeouts
+            --hidden-import selenium.webdriver.remote.command
+            --hidden-import selenium.webdriver.remote.webdriver
+            --hidden-import selenium.webdriver.remote.webelement
+            --hidden-import selenium.webdriver.remote.remote_connection
+            --hidden-import selenium.webdriver.support.wait
+            --hidden-import selenium.webdriver.support.expected_conditions
+            # webdriver_manager
+            --collect-submodules webdriver_manager
+            --hidden-import webdriver_manager.chrome
+            --hidden-import webdriver_manager.core.os_manager
+            --hidden-import webdriver_manager.core.logger
+            --hidden-import webdriver_manager.core.download_manager
+            # trio / websocket / Selenium 4.x 隐式依赖
+            --collect-submodules trio
+            --collect-submodules wsproto
+            --hidden-import sniffio
+            --hidden-import outcome
+            --hidden-import sortedcontainers
+            --hidden-import attrs
+            --hidden-import cffi
+            --hidden-import pycparser
+            --hidden-import websocket_client
+            --hidden-import PySocks
+        )
         ;;
     *)
         echo "[错误] 未知模式: $mode" >&2
